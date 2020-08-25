@@ -1,4 +1,5 @@
 var express = require('express');
+var dateTime = require('../common/datetime');
 var router = express.Router();
 
 // Load the MySQL pool connection
@@ -20,6 +21,10 @@ router.get('/', function(req, res, next) {
 
       // Don't use the connection here, it has been returned to the pool.
       console.log(results);
+      results.forEach(dishwasher => {
+        dishwasher.created_at_melbourne_date_time = dateTime.utcToMelbourneTime(dishwasher.created_at);
+        dishwasher.updated_at_melbourne_date_time = dateTime.utcToMelbourneTime(dishwasher.updated_at);
+      });
       res.send(results);
     });
   });
@@ -40,6 +45,10 @@ router.get('/:id', function(req, res, next){
 
       // Don't use the connection here, it has been returned to the pool.
       console.log(result);
+      result.forEach(dishwasher => {
+        dishwasher.created_at_melbourne_date_time = dateTime.utcToMelbourneTime(dishwasher.created_at);
+        dishwasher.updated_at_melbourne_date_time = dateTime.utcToMelbourneTime(dishwasher.updated_at);
+      });
       res.send(result);
     });
   });

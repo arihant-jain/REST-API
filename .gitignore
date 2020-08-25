@@ -52,6 +52,9 @@ jspm_packages/
 .yarn-integrity
 
 # dotenv environment variables file
-# .env 
+.env
 .env.test
+Procfile
 
+# VS code debugger configurations
+.vscode/

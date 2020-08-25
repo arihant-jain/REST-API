@@ -1,6 +1,7 @@
 var express = require('express');
 var createError = require('http-errors');
 var validateCup = require('../validate/cup')
+var dateTime = require('../common/datetime');
 var router = express.Router();
 
 // Load the MySQL pool connection
@@ -22,16 +23,20 @@ router.get('/', function(req, res, next) {
 
       // Don't use the connection here, it has been returned to the pool.
       console.log(results);
+      results.forEach(cup => {
+        cup.created_at_melbourne_date_time = dateTime.utcToMelbourneTime(cup.created_at);
+        cup.updated_at_melbourne_date_time = dateTime.utcToMelbourneTime(cup.updated_at);
+      });
       res.send(results);
     });
   });
 });
 
-/* GET total number of cups between 2 dates if supplied. Format accepted - YYYY/MM/DD */
+/* GET total number of cups added between 2 dates if supplied. Format accepted - YYYY/MM/DD */
 router.get('/count', function(req, res, next) {
-  
-  startDate = (req.query.startDate)? (String(req.query.startDate) + ' 00:00:00') : null
-  endDate = (req.query.endDate) ? (String(req.query.endDate) + ' 00:00:00') : null
+
+  startDate = (req.query.startDate)? dateTime.melbourneTimeToUTC(req.query.startDate) : null;
+  endDate = (req.query.endDate) ? dateTime.melbourneTimeToUTC(req.query.endDate) : null;
   if(startDate == null){
     if(endDate == null){
       sqlCommand = 'SELECT COUNT(*) AS COUNT FROM ' + table
@@ -82,6 +87,10 @@ router.get('/:id', function(req, res, next){
 
       // Don't use the connection here, it has been returned to the pool.
       console.log(result);
+      result.forEach(cup => {
+        cup.created_at_melbourne_date_time = dateTime.utcToMelbourneTime(cup.created_at);
+        cup.updated_at_melbourne_date_time = dateTime.utcToMelbourneTime(cup.updated_at);
+      });
       res.send(result);
     });
   });

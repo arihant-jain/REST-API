@@ -1,5 +1,5 @@
 var validSizes = ['S', 'M', 'L']
-var validStatus = ['A', 'D', 'L']
+var validStatus = ['R', 'B']
 
 function checkSize(size){
     for(i = 0; i < validSizes.length; i++){

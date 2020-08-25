@@ -1,4 +1,5 @@
 var express = require('express');
+var dateTime = require('../common/datetime');
 var router = express.Router();
 
 // Load the MySQL pool connection
@@ -20,6 +21,10 @@ router.get('/', function(req, res, next) {
 
       // Don't use the connection here, it has been returned to the pool.
       console.log(results);
+      results.forEach(bin => {
+        bin.created_at_melbourne_date_time = dateTime.utcToMelbourneTime(bin.created_at);
+        bin.updated_at_melbourne_date_time = dateTime.utcToMelbourneTime(bin.updated_at);
+      });
       res.send(results);
     });
   });
@@ -31,7 +36,7 @@ router.get('/:id', function(req, res, next){
     if (err) throw err; // not connected!
    
     // Use the connection
-    connection.query('SELECT * FROM ' + table + ' WHERE id = ' + req.params.id, function (error, results, fields) {
+    connection.query('SELECT * FROM ' + table + ' WHERE id = ' + req.params.id, function (error, result, fields) {
       // When done with the connection, release it.
       connection.release();
    
@@ -39,8 +44,12 @@ router.get('/:id', function(req, res, next){
       if (error) throw error;
 
       // Don't use the connection here, it has been returned to the pool.
-      console.log(results);
-      res.send(results);
+      console.log(result);
+      result.forEach(bin => {
+        bin.created_at_melbourne_date_time = dateTime.utcToMelbourneTime(bin.created_at);
+        bin.updated_at_melbourne_date_time = dateTime.utcToMelbourneTime(bin.updated_at);
+      });
+      res.send(result);
     });
   });
 })

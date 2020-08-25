@@ -1,4 +1,5 @@
 var express = require('express');
+var dateTime = require('../common/datetime');
 var router = express.Router();
 
 // Load the MySQL pool connection
@@ -11,7 +12,7 @@ router.get('/', function(req, res, next) {
     if (err) throw err; // not connected!
    
     // Use the connection
-    connection.query('SELECT * FROM ' + table, function (error, results, fields) {
+    connection.query('SELECT id, cafe_name, name, latitude, longitude, created_at, updated_at FROM ' + table, function (error, results, fields) {
       // When done with the connection, release it.
       connection.release();
    
@@ -20,6 +21,10 @@ router.get('/', function(req, res, next) {
 
       // Don't use the connection here, it has been returned to the pool.
       console.log(results);
+      results.forEach(cafe => {
+        cafe.created_at_melbourne_date_time = dateTime.utcToMelbourneTime(cafe.created_at);
+        cafe.updated_at_melbourne_date_time = dateTime.utcToMelbourneTime(cafe.updated_at);
+      });
       res.send(results);
     });
   });
@@ -31,7 +36,7 @@ router.get('/:id', function(req, res, next){
     if (err) throw err; // not connected!
    
     // Use the connection
-    connection.query('SELECT * FROM ' + table + ' WHERE id = ' + req.params.id, function (error, result, fields) {
+    connection.query('SELECT id, cafe_name, name, latitude, longitude, created_at, updated_at FROM ' + table + ' WHERE id = ' + req.params.id, function (error, result, fields) {
       // When done with the connection, release it.
       connection.release();
    
@@ -40,6 +45,10 @@ router.get('/:id', function(req, res, next){
 
       // Don't use the connection here, it has been returned to the pool.
       console.log(result);
+      result.forEach(cafe => {
+        cafe.created_at_melbourne_date_time = dateTime.utcToMelbourneTime(cafe.created_at);
+        cafe.updated_at_melbourne_date_time = dateTime.utcToMelbourneTime(cafe.updated_at);
+      });
       res.send(result);
     });
   });
@@ -51,7 +60,7 @@ router.post('/', function(req, res, next){
     if (err) throw err; // not connected!
    
     // Build query
-    var query = 'INSERT INTO ' + table + ' (name, password, latitude, longitude, created_at, updated_at) VALUES (\'' + req.body.name + '\', \'' + req.body.password + '\', ' + req.body.latitude + ', ' + req.body.longitude + ', current_timestamp(), null)';
+    var query = "INSERT INTO " + table + " (cafe_name, name, password, latitude, longitude, created_at, updated_at) VALUES (\"" + req.body.cafe_name + "\", \"" + req.body.name + "\", \"" + req.body.password + "\", " + req.body.latitude + ", " + req.body.longitude + ", current_timestamp(), null)";
     console.log(query);
     // Use the connection
     connection.query(query, function (error, result, fields) {
@@ -74,12 +83,13 @@ router.put('/:id', function(req, res, next){
     if (err) throw err; // not connected!
    
     // Build query
-    var query = 'UPDATE ' + table + ' SET';
-    query += (req.body.name != null ? ' name = \'' + req.body.name + '\',' : '');
-    query += (req.body.password != null ? ' password = \'' + req.body.password + '\',' : '');
-    query += (req.body.latitude != null ? ' latitude = ' + req.body.latitude + ',' : '');
-    query += (req.body.longitude != null ? ' longitude = ' + req.body.longitude + ',' : '');
-    query += ' updated_at = current_timestamp() WHERE id = ' + req.params.id;
+    var query = "UPDATE " + table + " SET";
+    query += (req.body.cafe_name != null ? " cafe_name = \"" + req.body.cafe_name + "\"," : "");
+    query += (req.body.name != null ? " name = \"" + req.body.name + "\"," : "");
+    query += (req.body.password != null ? " password = \"" + req.body.password + "\"," : "");
+    query += (req.body.latitude != null ? " latitude = " + req.body.latitude + "," : "");
+    query += (req.body.longitude != null ? " longitude = " + req.body.longitude + "," : "");
+    query += " updated_at = current_timestamp() WHERE id = " + req.params.id;
     console.log(query);
 
     // Use the connection    
@@ -98,6 +108,36 @@ router.put('/:id', function(req, res, next){
         res.send(`{"message" : "Café not found. TO BE CHANGED AS AN ERROR!"}`);
       else 
         res.send(`{"message" : "${result.changedRows} rows updated. TO BE CHANGED AS AN ERROR!"}`);
+    });
+  });
+});
+
+// DELETE a café by cafeName
+router.delete('/', function(req, res, next){
+  var cafeName = req.query.cafeName;
+
+  pool.getConnection(function(err, connection) {
+    if (err) throw err; // not connected!
+   
+    // Build query
+    var query = "DELETE FROM "+ table + " WHERE cafe_name = \"" + cafeName + "\"";
+    console.log(query);
+    // Use the connection
+    connection.query(query, function (error, result, fields) {
+      // When done with the connection, release it.
+      connection.release();
+   
+      // Handle error after the release.
+      if (error) throw error;
+
+      // Don't use the connection here, it has been returned to the pool.
+      console.log(result);
+      if(result.affectedRows == 1)
+        res.send(`{"message" : "Café deleted successfully"}`);
+      else if(result.affectedRows == 0)
+        res.send(`{"message" : "Café not found. TO BE CHANGED AS AN ERROR!"}`);
+      else 
+        res.send(`{"message" : "${result.affectedRows} rows deleted. TO BE CHANGED AS AN ERROR!"}`);
     });
   });
 });

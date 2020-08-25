@@ -2,6 +2,8 @@ var express = require('express');
 var router = express.Router();
 var validateSale = require('../validate/sale');
 var validateCup = require('../validate/cup');
+var countModule = require('../common/count');
+var dateTimeModule = require('../common/datetime');
 
 // Load the MySQL pool connection
 const pool = require('../db-config');
@@ -22,6 +24,13 @@ router.get('/', function(req, res, next) {
 
       // Don't use the connection here, it has been returned to the pool.
       console.log(results);
+      results.forEach(record => {
+        record.scanned_at_melbourne_date_time = dateTimeModule.utcToMelbourneTime(record.scanned_at);
+        
+        // for date time not inside object
+        record.scanned_at_melbourne_date = dateTimeModule.utcToMelbourneTime(record.scanned_at).date;
+        record.scanned_at_melbourne_time = dateTimeModule.utcToMelbourneTime(record.scanned_at).time;
+      });
       res.send(results);
     });
   });
@@ -30,8 +39,9 @@ router.get('/', function(req, res, next) {
 /* GET total number of sales between 2 dates if supplied. Format accepted - YYYY/MM/DD */
 router.get('/count', function(req, res, next) {
   
-  startDate = (req.query.startDate)? (String(req.query.startDate) + ' 00:00:00') : null
-  endDate = (req.query.endDate) ? (String(req.query.endDate) + ' 00:00:00') : null
+  startDate = (req.query.startDate)? dateTimeModule.melbourneTimeToUTC(req.query.startDate) : null;
+  endDate = (req.query.endDate) ? dateTimeModule.melbourneTimeToUTC(req.query.endDate) : null;
+  
   if(startDate == null){
     if(endDate == null){
       sqlCommand = 'SELECT COUNT(*) AS COUNT FROM ' + table
@@ -67,6 +77,104 @@ router.get('/count', function(req, res, next) {
   });
 });
 
+// Sale per cafe per day
+router.get('/salepercafeperday', function(req, res, next){
+  console.log(req.body.name);
+  var is_return_all = false;
+  if(req.body.name == null){
+    is_return_all = true;
+  }
+  else{
+    var cafe_usernames = '(';
+    if(Array.isArray(req.body.name)){
+      for(var i = 0; i < req.body.name.length; i++){
+        if(i < req.body.name.length - 1){
+          cafe_usernames += '\'' + req.body.name[i] + '\', ';
+        }
+        else{
+          cafe_usernames += '\'' + req.body.name[i] + '\')';
+        }
+      }
+    }
+    else{
+      cafe_usernames += '\'' + req.body.name + '\')';
+    }
+    console.log(cafe_usernames);
+  }
+
+  pool.getConnection(function(err, connection) {
+    if (err) throw err; // not connected!
+   
+    // Use the connection
+    // Manages timezone until Sunday, 4 April, 2021 3:00 am	AEDT
+    var query = 'SELECT cafe_id, (SELECT cafe_name FROM CAFE WHERE id = cafe_id) as cafe_name, DATE(CONVERT_TZ(scanned_at,\'+00:00\', \
+    IF(scanned_at < \'2019-04-06T16:00:00\', \'+11:00\', \
+      IF(scanned_at >= \'2019-04-06T16:00:00\' AND scanned_at < \'2019-10-05T16:00:00\', \'+10:00\', \
+        IF(scanned_at < \'2020-04-05T16:00:00\', \'+11:00\', \
+          IF(scanned_at >= \'2020-04-05T16:00:00\' AND scanned_at < \'2020-10-03T16:00:00\', \'+10:00\', \'+11:00\') \
+        ) \
+      ) \
+    ) \
+    )) as \'date\', COUNT(*) as \'count\' FROM SALE '
+    if(is_return_all == false){
+      query += 'WHERE cafe_id in (SELECT id FROM CAFE WHERE name in ' + cafe_usernames + ')';
+    }
+    query += 'GROUP BY cafe_id, `date`';
+    console.log(query);
+    connection.query(query, function (error, results, fields) {
+      // When done with the connection, release it.
+      connection.release();
+   
+      // Handle error after the release.
+      if (error) throw error;
+
+      // Don't use the connection here, it has been returned to the pool.
+      console.log(results);
+      results.forEach(record => {
+        record.melbourne_date = dateTimeModule.utcToMelbourneTime(record.date).date;
+      });
+      res.send(results);
+    });
+  });
+});
+
+router.get('/last', function(req, res, next){
+
+  // validate count value
+  if(countModule.checkCount(req.query.count)){
+    count = req.query.count;
+    console.log(count);
+    pool.getConnection(function(err, connection) {
+      if (err) throw err; // not connected!
+    
+      // Use the connection
+      
+      connection.query('SELECT s.id, s.cafe_id, c.cafe_name, s.cup_id, s.scanned_at FROM (SELECT * FROM SALE ORDER BY scanned_at DESC LIMIT ' + count + ') s JOIN CAFE c ON s.cafe_id = c.id ORDER BY s.scanned_at DESC', function (error, results, fields) {
+        // When done with the connection, release it.
+        connection.release();
+    
+        // Handle error after the release.
+        if (error) throw error;
+
+        // Don't use the connection here, it has been returned to the pool.
+        console.log(results);
+        results.forEach(record => {
+          record.scanned_at_melbourne_date_time = dateTimeModule.utcToMelbourneTime(record.scanned_at);
+
+          // for date time not inside object
+          record.scanned_at_melbourne_date = dateTimeModule.utcToMelbourneTime(record.scanned_at).date;
+          record.scanned_at_melbourne_time = dateTimeModule.utcToMelbourneTime(record.scanned_at).time;
+        });
+        res.send(results);
+      });
+    });
+  }
+  else{
+    res.status(400);
+    res.send("Error: 'count' is either not specified or is not a number greater than zero!");
+  }
+});
+
 // GET sale record by id
 router.get('/:id', function(req, res, next){
   pool.getConnection(function(err, connection) {
@@ -83,10 +191,17 @@ router.get('/:id', function(req, res, next){
 
       // Don't use the connection here, it has been returned to the pool.
       console.log(result);
+      result.forEach(record => {
+        record.scanned_at_melbourne_date_time = dateTimeModule.utcToMelbourneTime(record.scanned_at);
+
+        // for date time not inside object
+        record.scanned_at_melbourne_date = dateTimeModule.utcToMelbourneTime(record.scanned_at).date;
+        record.scanned_at_melbourne_time = dateTimeModule.utcToMelbourneTime(record.scanned_at).time;
+      });
       res.send(result);
     });
   });
-})
+});
 
 // POST a sale record
 router.post('/', function(req, res, next){
@@ -163,18 +278,21 @@ router.put('/:id', function(req, res, next){
   // Validate cup id
   if(validateCup.checkId(req.body.cup_id)){
 
+    // Convert to UTC time
+    var utcTime = dateTimeModule.melbourneTimeToUTC(req.body.scanned_at);
+
     pool.getConnection(function(err, connection) {
       if (err) throw err; // not connected!
     
       // Build query
       var query = 'UPDATE ' + table + ' SET';
       query += (req.body.cup_id != null ? ' cup_id = ' + req.body.cup_id : '');
-      if(req.body.cup_id != null && (req.body.cafe_id != null || req.body.scanned_at != null))
+      if(req.body.cup_id != null && (req.body.cafe_id != null || utcTime != null))
         query += ','
       query += (req.body.cafe_id != null ? ' cafe_id = ' + req.body.cafe_id : '');
-      if(req.body.cafe_id != null && req.body.scanned_at != null)
+      if(req.body.cafe_id != null && utcTime != null)
         query += ','
-      query += (req.body.scanned_at != null ? ' scanned_at = \'' + req.body.scanned_at + '\'' : '');
+      query += (utcTime != null ? ' scanned_at = \'' + utcTime + '\'' : '');
       query += ' WHERE id = ' + req.params.id;
       console.log(query);
 
@@ -232,17 +350,37 @@ router.delete('/:id', function(req, res, next){
 
 // POST the cached sale records
 router.post('/cache/', function(req, res, next){
-  
-  pool.getConnection(function(err, connection) {
-    if (err) throw err; // not connected!
 
-    // Empty body check
-    if(req.body.constructor === Object && Object.keys(req.body).length === 0) {
-      console.log('Array missing');
-    }
-    else {
-      // Empty array check
-      if(req.body.length != 0) {
+  // Empty body check
+  if(req.body.constructor === Object && Object.keys(req.body).length === 0) {
+    console.log('Array missing');
+  }
+  else {
+    // Empty array check
+    if(req.body.length != 0) {
+
+      // sort by date time although we believe the records will already be sorted.
+      sortedRecords = dateTimeModule.sortByDateTime(req.body);
+      var filteredRecords = [];
+      var duplicateRecords = [];
+      for(var index = 0; index < sortedRecords.length; index++){
+        var obj = sortedRecords[index];
+        if(validateSale.checkCacheDuplicate(obj.cup_id, obj.scanned_at) == false){
+          filteredRecords.push(obj);
+        }
+        else{
+          duplicateRecords.push(obj);
+        }
+      }
+
+      outputObject = {
+        "inserted": null,
+        "rejected": null,
+        "duplicatesFound":null
+      };
+
+      pool.getConnection(function(err, connection) {
+        if (err) throw err; // not connected!
 
         /* Begin transaction */
         connection.beginTransaction(function(err) {
@@ -252,26 +390,26 @@ router.post('/cache/', function(req, res, next){
           secondQueryPart = '(';
           addedRecords = 0;
           rejectedRecords = 0;                    
-          for(var index = 0; index < req.body.length; index++){
-            var obj = req.body[index];
+          for(var index = 0; index < filteredRecords.length; index++){
+            var obj = filteredRecords[index];
             if(validateCup.checkId(obj.cup_id)) {
               if(addedRecords > 0) {
                 query += ',';
                 secondQueryPart += ', ';
               }
               addedRecords += 1;
-              query += '(' + obj.cup_id + ', ' + obj.cafe_id + ', \'' + obj.scanned_at + '\')';
+              query += '(' + obj.cup_id + ', ' + obj.cafe_id + ', \'' + dateTimeModule.melbourneTimeToUTC(obj.scanned_at) + '\')';
               secondQueryPart += obj.cup_id;
             }
             else{
               rejectedRecords += 1;
             }
-            if(index == req.body.length - 1) {
+            if(index == filteredRecords.length - 1) {
               query += ';';
               secondQueryPart += ');';
             }
           }
-          if(rejectedRecords != req.body.length){
+          if(rejectedRecords != filteredRecords.length){
             console.log(query);
             // Use the connection
             connection.query(query, function(err, result) {
@@ -281,8 +419,8 @@ router.post('/cache/', function(req, res, next){
                   throw err;
                 });
               }
+              var insertedRecords = result.affectedRows;
 
-              const log = result.affectedRows;
               // Build query
               var query = 'UPDATE CUP SET status = \'B\' WHERE id IN ' + secondQueryPart;
               console.log(query);
@@ -308,21 +446,33 @@ router.post('/cache/', function(req, res, next){
                   // Don't use the connection here, it has been returned to the pool.
                   console.log(result);
 
-                  // Remove the latter reject records part when validation is done formally or may be not!!??.
-                  rejectStatement =  `${rejectedRecords} records rejected due to incorrect Cup Ids.`;
-                  res.status(201).send(`{"message" : "${result.affectedRows} sale records added. ` + rejectStatement + `"}`);
+                  var rejectStatement = `${rejectedRecords} records rejected due to invalid Cup Ids i.e non 10 digit ids.`;
+                  var insertStatement = `${insertedRecords} return records added.`
+                  var duplicateStatement = `${duplicateRecords.length} duplicate records found.`
+
+                  outputObject.inserted = insertStatement;
+                  outputObject.rejected = rejectStatement;
+                  outputObject.duplicatesFound = duplicateStatement;
+                  res.status(201).send(outputObject);
                 });
               });
             });
           }
           else {
-            res.status(201).send(`{"message" : "All of the ${rejectedRecords} records rejected due to incorrect Cup Ids."}`);
+            var rejectStatement = `${rejectedRecords} records rejected due to invalid Cup Ids i.e non 10 digit ids.`;
+            var insertStatement = `0 return records added.`
+            var duplicateStatement = `${duplicateRecords.length} duplicate records found.`
+
+            outputObject.inserted = insertStatement;
+            outputObject.rejected = rejectStatement;
+            outputObject.duplicatesFound = duplicateStatement;
+            res.status(200).send(outputObject);
           }
         });
         /* End transaction */
-      }
+      });
     }
-  });
+  }
 });
 
 module.exports = router;
